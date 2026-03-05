@@ -536,13 +536,16 @@ namespace XstReader
                     {
                         if (buffer == null)
                             buffer = new byte[rb.InflatedLength];
-
-                        var writable = new MemoryStream(buffer, offset, rb.InflatedLength, true);
-                        decompressionStream.CopyTo(writable);
-
-                        if (writable.Position != writable.Length)
+                        int curPos = 0;
+                        int buffLen = buffer.Length;
+                        int batchSize = buffLen > 65536 ? 16384 : 4096;
+                        while (curPos < buffer.Length)
                         {
-                            throw new EndOfStreamException();
+                            int count = Math.Min(batchSize, buffLen - curPos);
+                            int bytesRead = decompressionStream.Read(buffer, curPos, count);
+                            if (bytesRead == 0)
+                                throw new EndOfStreamException();   // restore safety;
+                            curPos += bytesRead;
                         }
                     }
                     read = rb.InflatedLength;

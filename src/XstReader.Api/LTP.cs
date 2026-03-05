@@ -828,21 +828,44 @@ namespace XstReader
         private byte[] GetBytesForHNID(List<HNDataBlock> blocks, BTree<Node> subNodeTree, HNID hnid)
         {
             byte[] buf = null;
-
-            if (hnid.hidType == EnidType.HID)
+        
+            try
             {
-                if (hnid.GetIndex(ndb.IsUnicode4K) != 0)
+                if (hnid.hidType == EnidType.HID)
                 {
-                    buf = MapArray<byte>(blocks, hnid.HID, HidSize(blocks, hnid.HID));
+                    var index = hnid.GetIndex(ndb.IsUnicode4K);
+        
+                    if (index > 0)
+                    {
+                        var blockIndex = hnid.HID.GetBlockIndex(ndb.IsUnicode4K);
+        
+                        // Validate block index
+                        if (blockIndex >= 0 && blockIndex < blocks.Count)
+                        {
+                            var size = HidSize(blocks, hnid.HID);
+        
+                            if (size > 0)
+                            {
+                                buf = MapArray<byte>(blocks, hnid.HID, size);
+                            }
+                        }
+                    }
+                }
+                else if (hnid.nidType == EnidType.LTP)
+                {
+                    buf = ndb.ReadSubNodeDataBlock(subNodeTree, hnid.NID);
+                }
+                else
+                {
+                    throw new XstException("Data storage style not implemented");
                 }
             }
-            else if (hnid.nidType == EnidType.LTP)
+            catch (IndexOutOfRangeException)
             {
-                buf = ndb.ReadSubNodeDataBlock(subNodeTree, hnid.NID);
+                // Corrupt heap allocation or bad HID reference
+                return null;
             }
-            else
-                throw new XstException("Data storage style not implemented");
-
+        
             return buf;
         }
 
@@ -851,9 +874,21 @@ namespace XstReader
         private int HidSize(List<HNDataBlock> blocks, HID hid)
         {
             var index = hid.GetIndex(ndb.IsUnicode4K);
-            if (index == 0) // Check for empty
+            if (index <= 0)
                 return 0;
-            var b = blocks[hid.GetBlockIndex(ndb.IsUnicode4K)];
+        
+            var blockIndex = hid.GetBlockIndex(ndb.IsUnicode4K);
+        
+            // Validate block index
+            if (blockIndex < 0 || blockIndex >= blocks.Count)
+                return 0;
+        
+            var b = blocks[blockIndex];
+        
+            // Validate allocation index
+            if (index >= b.rgibAlloc.Length || index - 1 < 0)
+                return 0;
+        
             return b.rgibAlloc[index] - b.rgibAlloc[index - 1];
         }
 
